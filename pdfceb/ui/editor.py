@@ -787,20 +787,14 @@ class EditorWindow(QMainWindow):
             group.addAction(a)
             tb.addAction(a)
             self.tool_actions[key] = a
-        if self.mode == "redact":
-            tb.addSeparator()
-        a = QAction(icons.icon("search", DANGER, 20), "Rechercher\net caviarder", self)
-        a.setToolTip("Caviarder toutes les occurrences d'un mot ou d'une expression")
-        a.triggered.connect(self.search_redact)
-        tb.addAction(a)
-        self.search_action = a
-        spacer = QWidget()
-        spacer.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
-        tb.addWidget(spacer)
+        self.search_btn = QPushButton(icons.icon("search", DANGER, 18), " Rechercher et caviarder…")
+        self.search_btn.setToolTip("Caviarder toutes les occurrences d'un mot ou d'une expression")
+        self.search_btn.clicked.connect(self.search_redact)
         self.save_btn = QPushButton(icons.icon("save", "#ffffff", 18), "  Enregistrer le PDF")
         self.save_btn.setObjectName("primary")
+        self.save_btn.setShortcut(QKeySequence.Save)
+        self.save_btn.setToolTip("Enregistrer une copie modifiée (Ctrl+S)")
         self.save_btn.clicked.connect(self.save)
-        tb.addWidget(self.save_btn)
 
         # barre de style
         sb = QToolBar("Style")
@@ -910,6 +904,9 @@ class EditorWindow(QMainWindow):
         self.banner_text = QLabel()
         self.banner_text.setWordWrap(True)
         bl.addWidget(self.banner_text, 1)
+        bl.addWidget(self.search_btn)
+        bl.addSpacing(6)
+        bl.addWidget(self.save_btn)
         holder = QWidget()
         hl = QVBoxLayout(holder)
         hl.setContentsMargins(10, 8, 10, 0)
@@ -935,7 +932,6 @@ class EditorWindow(QMainWindow):
         self.busy.setTextVisible(False)
         lay.addWidget(self.busy)
         self.setCentralWidget(central)
-        self.search_action.setVisible(True)
 
     # --------------------------------------------------------------- rendu
     def _schedule(self):
@@ -1031,6 +1027,7 @@ class EditorWindow(QMainWindow):
                                        (Qt.IBeamCursor if key == "text" else Qt.CrossCursor))
         hint = HINTS.get(key, "")
         self.banner_text.setText(hint)
+        self.search_btn.setVisible(key == "redact" or self.mode == "redact")
         warn = key in ("redact", "whiteout")
         self.banner.setObjectName("banner" if warn else "infoBanner")
         self.banner.style().unpolish(self.banner)
