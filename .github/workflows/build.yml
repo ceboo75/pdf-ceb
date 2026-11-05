@@ -1,0 +1,102 @@
+name: Compilation Windows
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 45
+    env:
+      PYTHONUTF8: "1"
+      PYTHONIOENCODING: utf-8
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+
+      - name: Installer les dépendances
+        run: |
+          mkdir -p logs
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt pyinstaller pytest 2>&1 | tee logs/1_installation.txt
+
+      - name: Tester le moteur PDF
+        run: python -m pytest -q tests 2>&1 | tee logs/2_tests_moteur.txt
+
+      - name: Tester l'interface (sources)
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: python -m pdfceb.app --selftest-ui src_ui 2>&1 | tee logs/3_tests_interface.txt
+
+      - name: Créer l'icône
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: python tools/make_icon.py
+
+      - name: Compiler l'exécutable
+        run: |
+          pyinstaller --noconfirm --clean --onefile --windowed --name PDF-Ceb \
+            --icon assets/icon.ico --version-file version_info.txt \
+            --collect-binaries pymupdf --collect-submodules pymupdf \
+            --exclude-module tkinter --exclude-module numpy --exclude-module scipy --exclude-module cv2 \
+            --exclude-module matplotlib --exclude-module pandas --exclude-module onnxruntime \
+            --exclude-module pymupdf4llm --exclude-module pymupdf_layout --exclude-module networkx \
+            --exclude-module yaml --exclude-module tabulate --exclude-module psutil --exclude-module pygments \
+            run_pdfceb.py 2>&1 | tee logs/4_compilation.txt
+          test -f dist/PDF-Ceb.exe
+          ls -la dist | tee logs/5_taille.txt
+
+      - name: Vérifier l'exécutable compilé
+        shell: pwsh
+        run: |
+          $p = Start-Process -FilePath "dist\PDF-Ceb.exe" -ArgumentList "--selftest", "$PWD\logs\6_exe_moteur.txt" -Wait -PassThru
+          Get-Content logs/6_exe_moteur.txt -ErrorAction SilentlyContinue
+          if ($p.ExitCode -ne 0) { Write-Output "Autotest du moteur en échec ($($p.ExitCode))"; exit 1 }
+          $env:QT_QPA_PLATFORM = "offscreen"
+          $p = Start-Process -FilePath "dist\PDF-Ceb.exe" -ArgumentList "--selftest-ui", "$PWD\exe_ui" -Wait -PassThru
+          Copy-Item exe_ui/uitest.log logs/7_exe_interface.txt -ErrorAction SilentlyContinue
+          Get-Content logs/7_exe_interface.txt -ErrorAction SilentlyContinue
+          if ($p.ExitCode -ne 0) { Write-Output "Autotest de l'interface en échec ($($p.ExitCode))"; exit 1 }
+
+      - name: Conserver l'exécutable
+        uses: actions/upload-artifact@v4
+        with:
+          name: PDF-Ceb-windows
+          path: dist/PDF-Ceb.exe
+
+      - name: Publier la version
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          name: PDF Ceb ${{ github.ref_name }}
+          body_path: RELEASE_NOTES.md
+          files: dist/PDF-Ceb.exe
+
+      - name: Archiver journaux et captures (branche ci-captures)
+        if: always()
+        run: |
+          mkdir -p /tmp/cap
+          cp -r logs/. /tmp/cap/ 2>/dev/null || true
+          cp -r exe_ui/captures /tmp/cap/captures 2>/dev/null || cp -r src_ui/captures /tmp/cap/captures 2>/dev/null || true
+          echo "${{ job.status }} ${GITHUB_REF_NAME} ${GITHUB_SHA}" > /tmp/cap/statut.txt
+          cd /tmp/cap
+          git init -q
+          git checkout -q -b ci-captures
+          git config user.name "github-actions"
+          git config user.email "actions@github.com"
+          git add -A
+          git commit -q -m "Journaux et captures Windows ${GITHUB_SHA::7}"
+          git push -q -f "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" ci-captures

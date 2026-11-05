@@ -1,0 +1,8 @@
+__pycache__/
+*.pyc
+build/
+dist/
+*.spec.bak
+assets/icon.ico
+assets/*.png
+.pytest_cache/
