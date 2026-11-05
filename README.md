@@ -40,6 +40,7 @@ python -m pdfceb.app --selftest-ui sortie   # test automatique de l'interface + 
 ```
 
 La compilation Windows est faite par GitHub Actions (`.github/workflows/build.yml`) : tests, compilation PyInstaller,
-vérification de l'exécutable, puis publication dans **Releases** lorsqu'une étiquette `v*` est poussée.
+vérification de l'exécutable, puis publication dans **Releases** sous le numéro de version défini dans
+`pdfceb/__init__.py` (une nouvelle version est créée dès que ce numéro change).
 
 Moteur PDF : [PyMuPDF](https://pymupdf.readthedocs.io/) (licence AGPL, usage personnel). Interface : PySide6 (Qt).
