@@ -51,7 +51,7 @@ def open_path(path):
 def show_in_folder(path):
     path = Path(path)
     if sys.platform.startswith("win") and path.exists() and path.is_file():
-        subprocess.Popen(["explorer", "/select,", str(path)])
+        subprocess.Popen(f'explorer /select,"{os.path.normpath(str(path))}"')
     else:
         open_path(path if path.is_dir() else path.parent)
 
@@ -616,7 +616,10 @@ class FileList(QListWidget):
         self.setAcceptDrops(True)
         self.setSpacing(1)
 
-    def add_file(self, path, password=None, info: str = ""):
+    def total_pages(self) -> int:
+        return sum(int(self.item(i).data(Qt.UserRole + 1) or 0) for i in range(self.count()))
+
+    def add_file(self, path, password=None, info: str = "", pages: int = 1):
         thumb = render_thumbnail(path, password, 0, 120)
         it = QListWidgetItem(f"{Path(path).name}\n{info}")
         if thumb is not None:
@@ -632,6 +635,7 @@ class FileList(QListWidget):
         else:
             it.setIcon(icons.icon("file", MUTED, 48))
         it.setData(Qt.UserRole, (str(path), password))
+        it.setData(Qt.UserRole + 1, pages)
         it.setToolTip(str(path))
         self.addItem(it)
 

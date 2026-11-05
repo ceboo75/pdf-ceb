@@ -98,7 +98,7 @@ def _run(out: Path, shots: Path, log: list) -> bool:
         "delete": ([a], lambda p: p.grid.select_pages([0, 2])),
         "extract": ([a], lambda p: (p.range_edit.setText("2, 4-5"), p._range_typed())),
         "organize": ([a], lambda p: (p._add_paths([b]), p.grid.select_pages([0]), p.grid.rotate_selected(90),
-                                     p._blank())),
+                                     p._move(1), p._blank())),
         "compress": ([a], None),
         "repair": ([a], None),
         "img2pdf": ([photo, logo], None),

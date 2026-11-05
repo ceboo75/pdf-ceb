@@ -308,7 +308,7 @@ class FileListTool(ToolPage):
         lay.addWidget(self.list, 1)
         row = QHBoxLayout()
         row.addWidget(_btn(" Ajouter des fichiers", "plus", slot=self.drop.browse))
-        row.addWidget(_btn(" Retirer", "close", slot=self.list.remove_selected))
+        row.addWidget(_btn(" Retirer", "close", slot=self._remove))
         row.addStretch(1)
         up = _btn("", "up", slot=lambda: self.list.move_selected(-1))
         up.setToolTip("Monter")
@@ -322,29 +322,29 @@ class FileListTool(ToolPage):
 
     def on_files(self, entries):
         for path, pw in entries:
-            info = ""
+            info, pages = "", 1
             try:
                 if core.is_pdf(path):
                     i = core.pdf_info(path, pw)
-                    info = f"{i['pages']} page(s) · {human_size(i['size'])}"
+                    pages = i["pages"]
+                    info = f"{pages} page(s) · {human_size(i['size'])}"
                 else:
                     info = f"Image · {human_size(Path(path).stat().st_size)}"
             except Exception:
                 pass
-            self.list.add_file(path, pw, info)
+            self.list.add_file(path, pw, info, pages)
         self.update_info()
+
+    def _remove(self):
+        self.list.remove_selected()
+        if self.list.count() == 0:
+            self.reset()
 
     def clear(self):
         self.list.clear()
 
-    def reset(self):
-        super().reset()
-
     def update_info(self):
-        n = self.list.count()
         self.entries = self.list.entries()
-        if n == 0 and self.stack.currentIndex() == 1:
-            self.reset()
 
     def files(self):
         return self.list.entries()
@@ -371,12 +371,7 @@ class MergeTool(FileListTool):
     def update_info(self):
         super().update_info()
         files = self.files()
-        pages = 0
-        for p, pw in files:
-            try:
-                pages += core.pdf_info(p, pw)["pages"] if core.is_pdf(p) else 1
-            except Exception:
-                pass
+        pages = self.list.total_pages()
         self.summary.setText(f"{len(files)} fichier(s) · {pages} page(s) au total")
 
     def task(self):
@@ -503,6 +498,8 @@ class GridTool(ToolPage):
     def build_content(self, lay):
         self.grid = ThumbGrid(self.GRID_MODE, self.REORDER)
         self.grid.itemSelectionChanged.connect(self._sel_changed)
+        if not self.REORDER:
+            self.grid.files_dropped.connect(self.load_files)
         lay.addWidget(self.grid, 1)
         self.grid_hint = _label("Cliquez sur les pages pour les sélectionner (Ctrl ou Maj pour en choisir plusieurs).",
                                 "hint")
@@ -672,6 +669,8 @@ class OrganizeTool(GridTool):
             (" Page vierge", "blank", self._blank, "Insérer une page vierge après la sélection"),
             (" Ajouter un PDF", "plus", self._add_pdf, "Ajouter les pages d'un autre PDF"),
             (" Inverser", "reverse", self._reverse, "Inverser l'ordre des pages"),
+            ("", "left", lambda: self._move(-1), "Déplacer la sélection vers le début"),
+            ("", "right", lambda: self._move(1), "Déplacer la sélection vers la fin"),
         ]:
             b = _btn(text, ic, slot=fn)
             b.setToolTip(tip)
@@ -737,6 +736,21 @@ class OrganizeTool(GridTool):
         it = self.grid.insert_blank(row, w, h)
         self.grid.clearSelection()
         it.setSelected(True)
+        self._refresh()
+
+    def _move(self, delta):
+        rows = sorted(self.grid.selected_rows(), reverse=delta > 0)
+        if not rows or (delta < 0 and rows[-1] == 0) or (delta > 0 and rows[-1] == self.grid.count() - 1):
+            return
+        moved = []
+        for r in rows:
+            it = self.grid.takeItem(r)
+            self.grid.insertItem(r + delta, it)
+            moved.append(it)
+        self.grid.clearSelection()
+        for it in moved:
+            it.setSelected(True)
+        self.grid.scrollToItem(moved[0])
         self._refresh()
 
     def _reverse(self):

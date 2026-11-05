@@ -71,6 +71,17 @@ jobs:
           Get-Content logs/7_exe_interface.txt -ErrorAction SilentlyContinue
           if ($p.ExitCode -ne 0) { Write-Output "Autotest de l'interface en échec ($($p.ExitCode))"; exit 1 }
 
+      - name: Captures avec le rendu Windows réel
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          $env:PDFCEB_REAL_DISPLAY = "1"
+          Remove-Item Env:QT_QPA_PLATFORM -ErrorAction SilentlyContinue
+          $p = Start-Process -FilePath "dist\PDF-Ceb.exe" -ArgumentList "--selftest-ui", "$PWD\real_ui" -PassThru
+          if (-not $p.WaitForExit(300000)) { $p.Kill(); Write-Output "Délai dépassé" }
+          Copy-Item real_ui/uitest.log logs/8_exe_interface_ecran_reel.txt -ErrorAction SilentlyContinue
+          Get-Content real_ui/uitest.log -ErrorAction SilentlyContinue
+
       - name: Conserver l'exécutable
         uses: actions/upload-artifact@v4
         with:
@@ -90,7 +101,7 @@ jobs:
         run: |
           mkdir -p /tmp/cap
           cp -r logs/. /tmp/cap/ 2>/dev/null || true
-          cp -r exe_ui/captures /tmp/cap/captures 2>/dev/null || cp -r src_ui/captures /tmp/cap/captures 2>/dev/null || true
+          cp -r real_ui/captures /tmp/cap/captures 2>/dev/null || cp -r exe_ui/captures /tmp/cap/captures 2>/dev/null || cp -r src_ui/captures /tmp/cap/captures 2>/dev/null || true
           echo "${{ job.status }} ${GITHUB_REF_NAME} ${GITHUB_SHA}" > /tmp/cap/statut.txt
           cd /tmp/cap
           git init -q

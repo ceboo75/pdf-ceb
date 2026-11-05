@@ -760,12 +760,11 @@ class EditorWindow(QMainWindow):
         self.view.zoom_changed.connect(self._on_zoom)
         QTimer.singleShot(0, self.fit_width)
 
+        self.set_tool("select")
         if mode == "redact":
             self.set_tool("redact")
         elif mode == "sign":
             QTimer.singleShot(250, lambda: self.set_tool("signature"))
-        else:
-            self.set_tool("select")
 
     # ------------------------------------------------------------- interface
     def _build_ui(self):
@@ -993,7 +992,7 @@ class EditorWindow(QMainWindow):
                 p.scale_hi = 0.0
 
     def _on_rendered(self, tag, pno, scale, img):
-        if pno >= len(self.pages):
+        if self._closing or pno >= len(self.pages):
             return
         page = self.pages[pno]
         pm = QPixmap.fromImage(img)

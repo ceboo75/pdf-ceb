@@ -41,7 +41,8 @@ def main():
         from .selftest import main as selftest_main
         sys.exit(selftest_main(_arg_value("--selftest")))
     if "--selftest-ui" in sys.argv:
-        os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+        if not os.environ.get("PDFCEB_REAL_DISPLAY"):
+            os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
         from .uitest import main as ui_main
         sys.exit(ui_main(_arg_value("--selftest-ui")))
 
