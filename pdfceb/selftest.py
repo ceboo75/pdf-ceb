@@ -101,6 +101,70 @@ def make_samples(d: Path) -> dict:
     return dict(a=a_path, b=b_path, form=form_path, photo=photo_path, logo=logo_path, broken=broken_path)
 
 
+PARA = ("La présente convention a pour objet de définir les conditions dans lesquelles la Région "
+        "apporte son soutien financier au bénéficiaire pour la réalisation du projet décrit en annexe. "
+        "Le montant de la subvention est fixé à dix mille euros, versé en deux fois selon l'échéancier "
+        "prévu à l'article 5. Toute modification du projet doit être signalée sans délai.")
+BG = (0.94, 0.96, 1.0)
+
+
+def sans_font_files():
+    import os
+    win = os.path.join(os.environ.get("WINDIR", r"C:\Windows"), "Fonts")
+    for r, b in ((os.path.join(win, "arial.ttf"), os.path.join(win, "arialbd.ttf")),
+                 ("/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+                  "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf")):
+        if os.path.exists(r) and os.path.exists(b):
+            return r, b
+    return None, None
+
+
+def make_text_sample(path: Path) -> Path | None:
+    """Document type « Word » : titre centré, paragraphe justifié avec un mot en gras,
+    paragraphe aligné à gauche avec un mot en couleur, fond coloré, polices intégrées."""
+    R, B = sans_font_files()
+    if not R:
+        return None
+    fr, fb = pymupdf.Font(fontfile=R), pymupdf.Font(fontfile=B)
+    doc = pymupdf.open()
+    p = doc.new_page()
+    p.insert_font(fontname="R", fontfile=R)
+    p.insert_font(fontname="B", fontfile=B)
+    p.draw_rect(pymupdf.Rect(50, 40, 545, 420), color=None, fill=BG)
+    t = "CONVENTION DE SUBVENTION"
+    p.insert_text(((595 - fb.text_length(t, 16)) / 2, 80), t, fontname="B", fontsize=16)
+    left, right, y, size, lead = 72, 523, 120, 11, 14
+    fw = lambda wd: (fb if wd == "soutien" else fr).text_length(wd, size)  # noqa: E731
+    lines, cur = [], []
+    for wd in PARA.split(" "):
+        trial = cur + [wd]
+        if sum(fw(x) for x in trial) + fr.text_length(" ", size) * (len(trial) - 1) > right - left and cur:
+            lines.append(cur)
+            cur = [wd]
+        else:
+            cur = trial
+    lines.append(cur)
+    for i, ln in enumerate(lines):
+        nat = sum(fw(wd) for wd in ln)
+        gap = (right - left - nat) / (len(ln) - 1) if i < len(lines) - 1 and len(ln) > 1 else fr.text_length(" ", size)
+        x = left
+        for wd in ln:
+            p.insert_text((x, y), wd, fontname="B" if wd == "soutien" else "R", fontsize=size)
+            x += fw(wd) + gap
+        y += lead
+    y += 12
+    p.insert_text((72, y), "Fait à Orléans, le 6 novembre 2026, en deux exemplaires.", fontname="R", fontsize=11)
+    y += 14
+    p.insert_text((72, y), "Contact : ", fontname="R", fontsize=11)
+    p.insert_text((72 + fr.text_length("Contact : ", 11), y), "service juridique", fontname="R", fontsize=11,
+                  color=(0.8, 0.1, 0.1))
+    y += 14
+    p.insert_text((72, y), "Dernière ligne à supprimer.", fontname="R", fontsize=11)
+    doc.subset_fonts()
+    doc.save(path)
+    return path
+
+
 def _text(path, pno=0, pw=None):
     doc = core.open_pdf(path, pw)
     t = doc[pno].get_text()
@@ -337,7 +401,75 @@ def run(workdir: Path | None = None) -> list[tuple[str, bool, str]]:
         assert (w[2] - w[0]) > (w[3] - w[1]), "texte ajouté non horizontal sur la page tournée"
         assert 480 < w[1] < 540, w
 
+    def t_textedit():
+        from . import textedit
+        src = make_text_sample(tmp / "in" / "convention.pdf")
+        if src is None:
+            return  # aucune police sans empattement disponible sur cette machine
+        doc = pymupdf.open(src)
+        tp = core.TextPage(doc, 0)
+        paras = tp.text.paragraphs
+        assert [p.align for p in paras] == ["center", "justify", "left"], [p.align for p in paras]
+        title, body, foot = paras
+        sub = lambda runs, a, b: [(t.replace(a, b), k) for t, k in runs]  # noqa: E731
+        edits = [
+            {"key": body.key, "mode": "para", "runs": sub(body.runs(), "dix mille euros", "onze mille euros")},
+            {"key": title.key, "mode": "line", "line": 0, "runs": [(title.lines[0].text + " 2027", title.lines[0].chars[0].style)]},
+            {"key": foot.key, "mode": "line", "line": 0, "runs": sub(foot.lines[0].runs(), "6 novembre", "12 novembre")},
+            {"key": foot.key, "mode": "line", "line": 1, "runs": sub(foot.lines[1].runs(), "service juridique", "direction juridique")},
+            {"key": foot.key, "mode": "line", "line": 2, "runs": []},
+        ]
+        pix, warn = tp.render(edits, 1.0)
+        assert not [w for w in warn if "remplacée" in w], warn
+        out = core.apply_edits(src, None, o / "texte_modifie.pdf", {}, text_edits={0: edits})
+        new = pymupdf.open(out)[0]
+        txt = " ".join(new.get_text("text", sort=True).split())  # espaces de justification normalisées
+        for must in ("onze mille euros", "CONVENTION DE SUBVENTION 2027", "12 novembre 2026", "direction juridique"):
+            assert must in txt, (must, txt)
+        for gone in ("dix mille", "6 novembre", "service juridique", "Dernière ligne"):
+            assert gone not in txt, (gone, txt)
+        # même police que l'original pour le texte réécrit
+        fonts = {sp["font"] for b in new.get_text("dict")["blocks"] for l in b.get("lines", []) for sp in l["spans"]
+                 if "onze" in sp["text"] or "direction" in sp["text"]}
+        assert fonts and all(("Arial" in f or "Liberation Sans" in f) for f in fonts), fonts
+        # couleur conservée pour « direction juridique »
+        cols = {sp["color"] for b in new.get_text("dict")["blocks"] for l in b.get("lines", []) for sp in l["spans"]
+                if "direction" in sp["text"]}
+        assert cols == {tp.text.styles[foot.lines[1].chars[-1].style].color}, cols
+        # lignes inchangées : pixels identiques
+        old_page = pymupdf.open(src)[0]
+        for ln in body.lines[:2]:
+            clip = pymupdf.Rect(ln.bbox) + (-2, -2, 2, 2)
+            a = old_page.get_pixmap(dpi=144, clip=clip).samples
+            b = new.get_pixmap(dpi=144, clip=clip).samples
+            assert a == b, "une ligne non modifiée a changé"
+        # fond préservé à l'emplacement de la ligne supprimée (aucun rectangle blanc)
+        gone_line = foot.lines[2]
+        pt = ((gone_line.bbox[0] + gone_line.bbox[2]) / 2, (gone_line.bbox[1] + gone_line.bbox[3]) / 2)
+        pix2 = new.get_pixmap(dpi=72, clip=pymupdf.Rect(pt[0] - 40, pt[1] - 3, pt[0] + 40, pt[1] + 3))
+        bg = tuple(round(v * 255) for v in BG)
+        assert all(abs(pix2.pixel(x, 2)[i] - bg[i]) <= 2 for x in range(0, pix2.width, 5) for i in range(3)), \
+            "le fond a été recouvert"
+        # paragraphe justifié : bords droits alignés, structure intacte à la relecture
+        again = textedit.analyze(new)
+        assert len(again.paragraphs) == 3, [p.lines[0].text for p in again.paragraphs]
+        jb = again.paragraphs[1]
+        assert jb.align == "justify" and all(abs(l.right - body.right) < 0.8 for l in jb.lines[:-1]), \
+            [round(l.right, 2) for l in jb.lines]
+        # titre toujours centré
+        tl = again.paragraphs[0].lines[0]
+        assert abs((tl.left + tl.right) / 2 - new.rect.width / 2) < 1.0
+        # nouvelle modification d'un fichier déjà modifié
+        tp2 = core.TextPage(pymupdf.open(out), 0)
+        b2 = tp2.text.paragraphs[1]
+        li = next(i for i, l in enumerate(b2.lines) if "versé" in l.text)
+        e2 = [{"key": b2.key, "mode": "line", "line": li, "runs": sub(b2.lines[li].runs(), "versé", "payé")}]
+        out2 = core.apply_edits(out, None, o / "texte_modifie_2.pdf", {}, text_edits={0: e2})
+        t2 = " ".join(pymupdf.open(out2)[0].get_text("text", sort=True).split())
+        assert "payé en deux fois" in t2 and "versé" not in t2, t2
+
     for name, fn in [
+        ("Modifier le texte existant", t_textedit),
         ("Sélection de pages", t_parse), ("Fusionner", t_merge), ("PDF mal formés", t_malformed),
         ("Diviser", t_split),
         ("Supprimer / extraire", t_delete_extract), ("Organiser", t_organize), ("Pivoter", t_rotate),

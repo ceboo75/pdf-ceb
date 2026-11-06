@@ -78,6 +78,8 @@ _P = {
     "shield": '<path d="M12 3 4.5 6v5.5c0 4.6 3.2 8.2 7.5 9.5 4.3-1.3 7.5-4.9 7.5-9.5V6z"/><path d="m9 12 2 2 4-4"/>',
     "trash": '<path d="M4 7h16"/><path d="M9.5 7V4.5h5V7"/><path d="M6 7l1 13h10l1-13"/>',
     "color": '<circle cx="12" cy="12" r="8.5"/>',
+    "textedit": '<path d="M3.5 7V4.5h11V7"/><path d="M9 4.5v15"/><path d="M7 19.5h4"/><path d="M18 8v12"/>'
+                '<path d="M16 8h4M16 20h4"/>',
     "chev_up": '<path d="M6 15l6-6 6 6"/>',
     "chev_down": '<path d="M6 9l6 6 6-6"/>',
 }

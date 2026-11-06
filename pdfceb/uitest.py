@@ -206,6 +206,75 @@ def _run(out: Path, shots: Path, log: list) -> bool:
         ok_all = False
         log.append("ÉCHEC éditeur\n" + traceback.format_exc())
 
+    # Modifier le texte existant
+    try:
+        errors.clear()
+        txt_src = selftest.make_text_sample(out / "exemples" / "convention.pdf")
+        if txt_src is None:
+            log.append("--  modifier le texte : aucune police de test disponible, étape ignorée")
+        else:
+            from PySide6.QtCore import Qt
+            from PySide6.QtTest import QTest
+            ed = win.open_editor(str(txt_src), None, "edit")
+            ed.showNormal()
+            ed.resize(1440, 900)
+            pump(0.8)
+            ed.fit_width()
+            pump(0.5)
+            v = ed.view
+            pg = ed.pages[0]
+
+            def to_view(x, y):
+                return v.mapFromScene(pg.mapToScene(QPointF(x, y)))
+
+            ed.set_tool("modtext")
+            paras = ed.text_page(0).text.paragraphs
+            foot = paras[2]
+            l0 = foot.lines[0]
+            QTest.mouseMove(v.viewport(), to_view(l0.left + 20, l0.baseline - 3))
+            pump(0.1)
+            QTest.mouseClick(v.viewport(), Qt.LeftButton, Qt.NoModifier, to_view(l0.right - 1, l0.baseline - 3))
+            pump(0.2)
+            assert ed.inline is not None and ed.inline.mode == "line", "éditeur de ligne non ouvert"
+            QTest.keyClick(v.viewport(), Qt.Key_End)
+            QTest.keyClicks(v.viewport(), " (modifie)")
+            pump(0.1)
+            ed.grab().save(str(shots / "21_modifier_ligne.png"))
+            QTest.keyClick(v.viewport(), Qt.Key_Return)
+            pump(0.3)
+            body = paras[1]
+            l1 = body.lines[1]
+            QTest.mouseDClick(v.viewport(), Qt.LeftButton, Qt.NoModifier, to_view(l1.left + 40, l1.baseline - 3))
+            pump(0.3)
+            assert ed.inline is not None and ed.inline.mode == "para", "éditeur de paragraphe non ouvert"
+            it = ed.inline
+            i = it.document().toPlainText().find("dix")
+            c = it.textCursor()
+            c.setPosition(i)
+            c.setPosition(i + 3, c.MoveMode.KeepAnchor)
+            it.setTextCursor(c)
+            QTest.keyClicks(v.viewport(), "onze")
+            pump(0.1)
+            ed.grab().save(str(shots / "22_modifier_paragraphe.png"))
+            QTest.keyClick(v.viewport(), Qt.Key_Return, Qt.ControlModifier)
+            pump(0.4)
+            ed.grab().save(str(shots / "23_texte_modifie.png"))
+            before = counter["n"]
+            ed.save()
+            wait_tasks()
+            assert not errors, errors
+            produced = sorted(res_dir.glob(f"{before + 1:02d}_*"))
+            assert produced, "pas de fichier enregistré"
+            with pymupdf.open(produced[0]) as d:
+                t = " ".join(d[0].get_text("text", sort=True).split())
+            assert "(modifie)" in t and "onze mille euros" in t and "dix mille" not in t, t
+            log.append(f"OK  modifier le texte → {produced[0].name}")
+            ed.dirty = False
+            ed.close()
+    except Exception:  # noqa: BLE001
+        ok_all = False
+        log.append("ÉCHEC modifier le texte\n" + traceback.format_exc())
+
     # Fenêtre de signature
     try:
         from .ui.signature import SignatureDialog

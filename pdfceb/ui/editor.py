@@ -3,11 +3,15 @@ cache blanc, commentaires et caviardage."""
 from __future__ import annotations
 
 import math
+import threading
 from pathlib import Path
 
+import pymupdf
+
 from PySide6.QtCore import QBuffer, QByteArray, QIODevice, QPointF, QRectF, QSize, Qt, QTimer, Signal
-from PySide6.QtGui import (QAction, QActionGroup, QBrush, QColor, QFont, QImage, QImageReader, QKeySequence,
-                           QPainter, QPainterPath, QPainterPathStroker, QPen, QPixmap, QPolygonF, QShortcut,
+from PySide6.QtGui import (QAction, QActionGroup, QBrush, QColor, QFont, QFontDatabase, QFontMetricsF, QImage,
+                           QImageReader, QKeySequence, QPainter, QPainterPath, QPainterPathStroker, QPen, QPixmap,
+                           QPolygonF, QShortcut, QTextBlockFormat, QTextCharFormat, QTextCursor, QTextFormat,
                            QTransform)
 from PySide6.QtWidgets import (QCheckBox, QColorDialog, QComboBox, QFileDialog, QFrame, QGraphicsItem,
                                QGraphicsObject, QGraphicsPixmapItem, QGraphicsRectItem, QGraphicsScene,
@@ -15,12 +19,12 @@ from PySide6.QtWidgets import (QCheckBox, QColorDialog, QComboBox, QFileDialog, 
                                QListWidget, QListWidgetItem, QMainWindow, QMessageBox, QProgressBar, QPushButton,
                                QSizePolicy, QSpinBox, QToolBar, QToolButton, QVBoxLayout, QWidget)
 
-from .. import core
+from .. import core, fontmatch, textedit
 from . import icons
 from .signature import SignatureDialog, qimage_to_png
 from .style import ACCENT, BG, DANGER, MUTED
 from .widgets import (IMG_FILTER, PageRenderer, ResultDialog, ThumbGrid, ask_save_pdf, error_box, last_dir, remember_dir,
-                      run_task, suggest_output)
+                      pixmap_to_qimage, run_task, suggest_output)
 
 GAP = 24.0
 FONT_FAMILY = {"sans": "Arial", "serif": "Times New Roman", "mono": "Courier New"}
@@ -30,6 +34,8 @@ TEXT_MARGIN = 3.0
 
 TOOLS = [
     ("select", "Sélection", "select", "Sélectionner, déplacer et redimensionner les éléments (Échap)"),
+    ("modtext", "Modifier\nle texte", "textedit", "Modifier le texte existant : clic = une ligne, double-clic ou "
+     "sélection de plusieurs lignes = le paragraphe"),
     ("text", "Texte", "text", "Cliquez dans la page pour écrire"),
     ("image", "Image", "image", "Insérer une image depuis votre ordinateur"),
     ("signature", "Signature", "sign", "Ajouter votre signature"),
@@ -47,6 +53,8 @@ TOOLS = [
 HINTS = {
     "select": "Cliquez sur un élément pour le sélectionner ; faites-le glisser pour le déplacer, tirez un coin pour le "
               "redimensionner. Double-cliquez sur un texte pour le modifier. Touche Suppr pour effacer.",
+    "modtext": "Cliquez sur une ligne pour la modifier ; double-cliquez, ou sélectionnez plusieurs lignes à la "
+               "souris, pour modifier tout le paragraphe. Le texte garde sa police, sa taille et sa couleur.",
     "text": "Cliquez à l'endroit où écrire, puis tapez votre texte. Astuce : utilisez « Cache blanc » pour masquer "
             "un texte existant avant d'écrire par-dessus.",
     "rect": "Cliquez-glissez pour tracer un rectangle.",
@@ -518,6 +526,151 @@ class NoteItem(QGraphicsObject, Overlay):
 OVERLAYS = (BoxItem, TextItem, LineItem, InkItem, NoteItem)
 
 
+STYLE_PROP = QTextFormat.UserProperty + 1
+
+
+class InlineTextEditor(QGraphicsTextItem):
+    """Zone d'édition posée exactement sur le texte d'origine, dans sa police."""
+
+    def __init__(self, editor, page, para, mode, line_index, runs, styles, families, bg: QColor, zone: QRectF):
+        super().__init__()
+        self.editor = editor
+        self.page = page
+        self.para = para
+        self.mode = mode
+        self.line_index = line_index
+        self.styles = styles
+        self.families = families
+        self.bg = bg
+        self.zone = QRectF(zone)
+        self.initial_runs = [tuple(r) for r in runs]
+        self._done = False
+        self.setFlags(QGraphicsItem.ItemIsFocusable)
+        self.setTextInteractionFlags(Qt.TextEditorInteraction)
+        self.setZValue(10000)
+        doc = self.document()
+        doc.setDocumentMargin(0)
+        cur = QTextCursor(doc)
+        bf = QTextBlockFormat()
+        align = {"left": Qt.AlignLeft, "center": Qt.AlignHCenter, "right": Qt.AlignRight,
+                 "justify": Qt.AlignJustify}.get(para.align, Qt.AlignLeft)
+        if mode == "para":
+            bf.setAlignment(align)
+            bf.setLineHeight(float(para.pitch), QTextBlockFormat.LineHeightTypes.FixedHeight.value)
+            bf.setTextIndent(float(para.indent))
+        cur.setBlockFormat(bf)
+        first_fmt = None
+        for text, sk in runs:
+            fmt = self._fmt(sk)
+            first_fmt = first_fmt or fmt
+            parts = text.split("\n")
+            for i, part in enumerate(parts):
+                if i > 0:
+                    cur.insertBlock(bf, fmt)
+                if part:
+                    cur.insertText(part, fmt)
+        if first_fmt is None:
+            first_fmt = self._fmt(next(iter(styles)))
+            cur.setCharFormat(first_fmt)
+        self._first_font = first_fmt.font()
+        if mode == "para":
+            right = para.right if para.align == "justify" else max(para.right, para.limit or para.right)
+            self.setTextWidth(right - para.left + 0.5)
+            x = para.left
+            baseline = para.lines[0].baseline
+        else:
+            line = para.lines[line_index]
+            x = line.left
+            baseline = line.baseline
+        fm = QFontMetricsF(self._first_font)
+        top_gap = (para.pitch - fm.height()) / 2 if mode == "para" else 0.0
+        self.setPos(x, baseline - fm.ascent() - max(0.0, top_gap))
+        self._anchor = (para.lines[line_index].left + para.lines[line_index].right) / 2 if mode == "line" else None
+        if mode == "line" and para.align in ("center", "right"):
+            doc.contentsChanged.connect(self._reposition)
+            self._reposition()
+
+    def _fmt(self, sk) -> QTextCharFormat:
+        st = self.styles[sk]
+        f = QTextCharFormat()
+        font = QFont(self.families.get(sk, "Arial"))
+        font.setPixelSize(max(1, round(st.size)))
+        font.setBold(st.bold)
+        font.setItalic(st.italic)
+        f.setFont(font)
+        f.setForeground(QColor(st.hex))
+        f.setProperty(STYLE_PROP, sk)
+        return f
+
+    def _reposition(self):
+        w = self.document().idealWidth()
+        line = self.para.lines[self.line_index]
+        if self.para.align == "center":
+            self.setX(self._anchor - w / 2)
+        else:
+            self.setX(line.right - w)
+
+    def runs(self):
+        out = []
+        last = next(iter(self.styles))
+        blk = self.document().firstBlock()
+        first = True
+        while blk.isValid():
+            if not first:
+                out.append(["\n", last])
+            first = False
+            it = blk.begin()
+            while not it.atEnd():
+                fr = it.fragment()
+                sk = fr.charFormat().property(STYLE_PROP)
+                sk = sk if sk in self.styles else last
+                last = sk
+                txt = fr.text().replace(" ", "\n")
+                if out and out[-1][1] == sk:
+                    out[-1][0] += txt
+                else:
+                    out.append([txt, sk])
+                it += 1
+            blk = blk.next()
+        if self.mode == "line":
+            out = [[t.replace("\n", " "), k] for t, k in out]
+        return [tuple(r) for r in out if r[0]]
+
+    def boundingRect(self):
+        r = super().boundingRect()
+        z = self.mapRectFromParent(self.zone)
+        return r.united(z).adjusted(-3, -3, 3, 3)
+
+    def paint(self, p, opt, widget=None):
+        from PySide6.QtWidgets import QStyle
+        z = self.mapRectFromParent(self.zone)
+        p.fillRect(super().boundingRect().united(z).adjusted(-1.5, -1, 1.5, 1), self.bg)
+        opt.state &= ~QStyle.State_Selected
+        opt.state &= ~QStyle.State_HasFocus
+        super().paint(p, opt, widget)
+        p.setPen(QPen(QColor(ACCENT), 0, Qt.DashLine))
+        p.setBrush(Qt.NoBrush)
+        p.drawRect(super().boundingRect().united(z).adjusted(-2.5, -2, 2.5, 2))
+
+    def keyPressEvent(self, e):
+        if e.key() == Qt.Key_Escape:
+            self.editor.cancel_inline()
+            return
+        if e.key() in (Qt.Key_Return, Qt.Key_Enter):
+            if self.mode == "line" or e.modifiers() & Qt.ControlModifier:
+                self.editor.commit_inline()
+                return
+            self.textCursor().insertBlock()
+            return
+        super().keyPressEvent(e)
+
+    def focusOutEvent(self, e):
+        super().focusOutEvent(e)
+        if not self._done:
+            QTimer.singleShot(0, self.editor.commit_inline)
+
+
+
 # --------------------------------------------------------------------------
 # Pages
 # --------------------------------------------------------------------------
@@ -560,6 +713,8 @@ class EditorView(QGraphicsView):
         self._creating = None
         self._page = None
         self._start = None
+        self._tsel = None
+        self._tband = None
 
     def set_zoom(self, z: float, anchor_mouse=False):
         z = max(0.2, min(5.0, z))
@@ -580,6 +735,20 @@ class EditorView(QGraphicsView):
 
     def mousePressEvent(self, e):
         tool = self.editor.tool
+        if e.button() == Qt.LeftButton and tool == "modtext":
+            under = self.itemAt(e.position().toPoint())
+            while under is not None and not isinstance(under, InlineTextEditor):
+                under = under.parentItem()
+            if under is not None:
+                return super().mousePressEvent(e)
+            sp = self.mapToScene(e.position().toPoint())
+            page = self.editor.page_at(sp)
+            self.editor.commit_inline()
+            if page is not None:
+                self._tsel = (page, page.mapFromScene(sp))
+                self._tband = None
+            e.accept()
+            return
         if e.button() != Qt.LeftButton or tool == "select":
             return super().mousePressEvent(e)
         sp = self.mapToScene(e.position().toPoint())
@@ -606,6 +775,20 @@ class EditorView(QGraphicsView):
         e.accept()
 
     def mouseMoveEvent(self, e):
+        if self._tsel is not None:
+            page, start = self._tsel
+            lp = page.mapFromScene(self.mapToScene(e.position().toPoint()))
+            if self._tband is None and (lp - start).manhattanLength() > 6 / max(self.zoom, 0.1):
+                self._tband = QGraphicsRectItem(page)
+                self._tband.setPen(QPen(QColor(ACCENT), 0, Qt.DashLine))
+                self._tband.setBrush(QColor(66, 99, 235, 30))
+                self._tband.setZValue(9500)
+            if self._tband is not None:
+                self._tband.setRect(QRectF(start, lp).normalized())
+            e.accept()
+            return
+        if self.editor.tool == "modtext" and not e.buttons():
+            self.editor.hover_text(self.mapToScene(e.position().toPoint()))
         if self._creating is not None:
             lp = self._page.mapFromScene(self.mapToScene(e.position().toPoint()))
             r = self._page.rect()
@@ -616,6 +799,18 @@ class EditorView(QGraphicsView):
         super().mouseMoveEvent(e)
 
     def mouseReleaseEvent(self, e):
+        if self._tsel is not None:
+            page, start = self._tsel
+            self._tsel = None
+            if self._tband is not None:
+                rect = self._tband.rect()
+                self.scene().removeItem(self._tband)
+                self._tband = None
+                self.editor.open_text_zone(page, rect=rect)
+            else:
+                self.editor.open_text_zone(page, lp=start, mode="line")
+            e.accept()
+            return
         if self._creating is not None:
             item = self._creating
             self._creating = None
@@ -624,9 +819,19 @@ class EditorView(QGraphicsView):
             return
         super().mouseReleaseEvent(e)
 
+    def mouseDoubleClickEvent(self, e):
+        if self.editor.tool == "modtext" and e.button() == Qt.LeftButton:
+            sp = self.mapToScene(e.position().toPoint())
+            page = self.editor.page_at(sp)
+            if page is not None:
+                self.editor.open_text_zone(page, lp=page.mapFromScene(sp), mode="para")
+            e.accept()
+            return
+        super().mouseDoubleClickEvent(e)
+
     def keyPressEvent(self, e):
         fi = self.scene().focusItem()
-        if isinstance(fi, TextItem) and fi.editing():
+        if isinstance(fi, InlineTextEditor) or (isinstance(fi, TextItem) and fi.editing()):
             return super().keyPressEvent(e)
         if e.key() in (Qt.Key_Delete, Qt.Key_Backspace):
             self.editor.delete_selected()
@@ -745,6 +950,7 @@ class EditorWindow(QMainWindow):
         self._build_ui()
 
         data = Path(path).read_bytes()
+        self._init_text(data)
         self.hi = PageRenderer(path, password, data=data, parent=self)
         self.hi.rendered.connect(self._on_rendered)
         self.lo = PageRenderer(path, password, data=data, parent=self)
@@ -979,11 +1185,15 @@ class EditorWindow(QMainWindow):
         visible = set(self.visible_pages())
         self.hi.clear()
         for p in visible:
+            if self.text_edits.get(p.pno):
+                if abs(p.scale_hi - need) / need > 0.12:
+                    self._refresh_text_page(p)
+                continue
             if abs(p.scale_hi - need) / need > 0.12:
                 p.pending = need
                 self.hi.request("hi", p.pno, need)
         for p in self.pages:
-            if p not in visible and p.scale_hi and p.low is not None:
+            if p not in visible and p.scale_hi and p.low is not None and not self.text_edits.get(p.pno):
                 p.set_render(p.low, p.low_scale)
                 p.scale_hi = 0.0
 
@@ -991,6 +1201,11 @@ class EditorWindow(QMainWindow):
         if self._closing or pno >= len(self.pages):
             return
         page = self.pages[pno]
+        if self.text_edits.get(pno):
+            if tag == "low":
+                page.low = QPixmap.fromImage(img)
+                page.low_scale = scale
+            return
         pm = QPixmap.fromImage(img)
         if tag == "low":
             page.low = pm
@@ -1013,6 +1228,260 @@ class EditorWindow(QMainWindow):
                 return p
         return None
 
+    # ------------------------------------------------- modification du texte
+    def _init_text(self, data: bytes):
+        self.base_doc = pymupdf.open(stream=data, filetype="pdf")
+        if self.base_doc.needs_pass:
+            self.base_doc.authenticate(self.password or "")
+        self.text_pages: dict[int, core.TextPage] = {}
+        self.text_edits: dict[int, dict] = {}
+        self.inline: InlineTextEditor | None = None
+        self._qt_fams: dict = {}
+        self._hover_line = None
+        self._hover_para = None
+        threading.Thread(target=fontmatch.INDEX.build, daemon=True).start()
+
+    def text_page(self, pno: int) -> core.TextPage:
+        tp = self.text_pages.get(pno)
+        if tp is None:
+            from PySide6.QtWidgets import QApplication
+            QApplication.setOverrideCursor(Qt.WaitCursor)
+            try:
+                tp = self.text_pages[pno] = core.TextPage(self.base_doc, pno)
+            finally:
+                QApplication.restoreOverrideCursor()
+        return tp
+
+    def _hover_items(self, page):
+        if self._hover_line is None:
+            self._hover_line = QGraphicsRectItem()
+            self._hover_line.setPen(QPen(QColor(ACCENT), 0, Qt.DashLine))
+            self._hover_line.setBrush(QColor(66, 99, 235, 28))
+            self._hover_line.setZValue(9000)
+            self._hover_para = QGraphicsRectItem()
+            self._hover_para.setPen(QPen(QColor(66, 99, 235, 110), 0, Qt.DotLine))
+            self._hover_para.setBrush(Qt.NoBrush)
+            self._hover_para.setZValue(8999)
+        for it in (self._hover_line, self._hover_para):
+            if it.parentItem() is not page:
+                it.setParentItem(page)
+        return self._hover_line, self._hover_para
+
+    def hide_hover(self):
+        for it in (self._hover_line, self._hover_para):
+            if it is not None:
+                it.setVisible(False)
+
+    def hover_text(self, sp: QPointF):
+        if self.tool != "modtext" or self.inline is not None:
+            self.hide_hover()
+            return
+        page = self.page_at(sp)
+        if page is None:
+            self.hide_hover()
+            return
+        lp = page.mapFromScene(sp)
+        para, li = self.text_page(page.pno).text.line_at(lp.x(), lp.y())
+        if para is None:
+            self.hide_hover()
+            self.view.viewport().setCursor(Qt.ArrowCursor)
+            return
+        self.view.viewport().setCursor(Qt.IBeamCursor)
+        hl, hp = self._hover_items(page)
+        x0, y0, x1, y1 = para.lines[li].bbox
+        hl.setRect(QRectF(x0 - 1.5, y0 - 0.5, x1 - x0 + 3, y1 - y0 + 1))
+        px0, py0, px1, py1 = para.bbox
+        hp.setRect(QRectF(px0 - 3, py0 - 2, px1 - px0 + 6, py1 - py0 + 4))
+        hl.setVisible(True)
+        hp.setVisible(len(para.lines) > 1)
+
+    def _qt_family(self, rf, style) -> str:
+        key = rf.path or (("buf", hash(rf.buffer)) if rf.buffer else ("std", rf.label))
+        fam = self._qt_fams.get(key)
+        if fam:
+            return fam
+        fid = -1
+        try:
+            if rf.path:
+                fid = QFontDatabase.addApplicationFont(rf.path)
+            elif rf.buffer:
+                fid = QFontDatabase.addApplicationFontFromData(QByteArray(rf.buffer))
+        except Exception:
+            fid = -1
+        fams = QFontDatabase.applicationFontFamilies(fid) if fid >= 0 else []
+        if fams:
+            fam = fams[0]
+        else:
+            label = rf.label
+            fam = ("Courier New" if label.startswith("co") else "Times New Roman" if label.startswith("ti")
+                   else "Arial")
+        self._qt_fams[key] = fam
+        return fam
+
+    def _sample_bg(self, page: PageItem, zone: QRectF) -> QColor:
+        pm = page.pix.pixmap()
+        if pm.isNull():
+            return QColor("white")
+        img = pm.toImage()
+        sc = 1.0 / page.pix.scale() if page.pix.scale() else 1.0
+        pts = [QPointF(zone.left() - 2, zone.center().y()), QPointF(zone.right() + 2, zone.center().y()),
+               QPointF(zone.center().x(), zone.top() - 1), QPointF(zone.center().x(), zone.bottom() + 1),
+               QPointF(zone.left() - 2, zone.top() - 1), QPointF(zone.right() + 2, zone.bottom() + 1)]
+        votes = {}
+        for pt in pts:
+            x, y = int(pt.x() * sc), int(pt.y() * sc)
+            if 0 <= x < img.width() and 0 <= y < img.height():
+                c = img.pixelColor(x, y).name()
+                votes[c] = votes.get(c, 0) + 1
+        if not votes:
+            return QColor("white")
+        return QColor(max(votes, key=votes.get))
+
+    def open_text_zone(self, page: PageItem, lp: QPointF | None = None, mode: str = "line", rect=None):
+        self.commit_inline()
+        self.hide_hover()
+        try:
+            tp = self.text_page(page.pno)
+        except Exception as exc:  # noqa: BLE001
+            error_box(self, exc)
+            return
+        text = tp.text
+        if rect is not None:
+            hits = {}
+            for para in text.paragraphs:
+                for i, l in enumerate(para.lines):
+                    if QRectF(QPointF(l.bbox[0], l.bbox[1]), QPointF(l.bbox[2], l.bbox[3])).intersects(rect):
+                        hits.setdefault(para.key, []).append(i)
+            if not hits:
+                return
+            key = max(hits, key=lambda k: len(hits[k]))
+            para = text.find(key)
+            li = hits[key][0]
+            mode = "para" if len(hits[key]) > 1 else "line"
+            lp = QPointF(para.lines[li].left, para.lines[li].baseline - 1)
+        else:
+            para, li = text.line_at(lp.x(), lp.y())
+        if para is None:
+            self.show_warning("Pas de texte modifiable à cet endroit (image, texte tourné ou document scanné).")
+            return
+        edits = self.text_edits.setdefault(page.pno, {})
+        pkey = (para.key, "para", 0)
+        if pkey in edits:
+            mode = "para"
+        if mode == "para":
+            if pkey in edits:
+                runs = edits[pkey]["runs"]
+            else:
+                over = {i: e["runs"] for (k, m, i), e in edits.items() if k == para.key and m == "line"}
+                runs = para.runs(over)
+            zone = QRectF(QPointF(*para.bbox[:2]), QPointF(*para.bbox[2:]))
+        else:
+            lkey = (para.key, "line", li)
+            runs = edits[lkey]["runs"] if lkey in edits else para.lines[li].runs()
+            b = para.lines[li].bbox
+            zone = QRectF(QPointF(b[0], b[1]), QPointF(b[2], b[3]))
+        book = textedit.FontBook(text.styles)
+        for t, sk in runs:
+            book.need_text(sk, t)
+        styles_used = {sk for _, sk in runs} | {c.style for l in para.lines for c in l.chars}
+        families = {sk: self._qt_family(book.font(sk), text.styles[sk]) for sk in styles_used}
+        ed = InlineTextEditor(self, page, para, mode, li, runs, text.styles, families,
+                              self._sample_bg(page, zone), zone)
+        ed.setParentItem(page)
+        self.inline = ed
+        ed.setFocus(Qt.MouseFocusReason)
+        cur = ed.textCursor()
+        pos = ed.document().documentLayout().hitTest(ed.mapFromParent(lp), Qt.FuzzyHit)
+        if pos >= 0:
+            cur.setPosition(pos)
+            ed.setTextCursor(cur)
+        if mode == "line":
+            self.banner_text.setText("Modification de la ligne — Entrée pour valider, Échap pour annuler. "
+                                     "Double-cliquez pour modifier tout le paragraphe.")
+        else:
+            self.banner_text.setText("Modification du paragraphe — le texte se répartit automatiquement sur les "
+                                     "lignes. Entrée : nouvelle ligne · Ctrl+Entrée ou clic à côté : valider · "
+                                     "Échap : annuler.")
+
+    def _close_inline(self, ed):
+        ed._done = True
+        if self.inline is ed:
+            self.inline = None
+        if ed.scene() is not None:
+            self.scene.removeItem(ed)
+        if self.tool == "modtext":
+            self.banner_text.setText(HINTS["modtext"])
+
+    def cancel_inline(self):
+        ed = self.inline
+        if ed is not None and not ed._done:
+            self._close_inline(ed)
+            self.view.setFocus()
+
+    def commit_inline(self):
+        ed = self.inline
+        if ed is None or ed._done:
+            return
+        runs = ed.runs()
+        self._close_inline(ed)
+        self.view.setFocus()
+
+        def norm(rs):
+            out = []
+            for t, k in rs:
+                if out and out[-1][1] == k:
+                    out[-1][0] += t
+                else:
+                    out.append([t, k])
+            return [tuple(r) for r in out if r[0]]
+
+        if norm(runs) == norm(ed.initial_runs):
+            return
+        pno = ed.page.pno
+        edits = self.text_edits.setdefault(pno, {})
+        snapshot = dict(edits)
+        key = ed.para.key
+        if ed.mode == "para":
+            for k in [k for k in edits if k[0] == key]:
+                del edits[k]
+            edits[(key, "para", 0)] = {"key": key, "mode": "para", "runs": runs}
+        else:
+            edits[(key, "line", ed.line_index)] = {"key": key, "mode": "line", "line": ed.line_index, "runs": runs}
+        self.history.append(("text", pno, snapshot))
+        self.dirty = True
+        self._refresh_text_page(ed.page, warn=True)
+
+    def _text_zoom(self):
+        dpr = self.view.devicePixelRatioF() if hasattr(self.view, "devicePixelRatioF") else 1.0
+        return min(4.0, max(0.3, self.view.zoom * dpr))
+
+    def _refresh_text_page(self, page: PageItem, warn=False):
+        edits = list(self.text_edits.get(page.pno, {}).values())
+        if not edits:
+            self.text_edits.pop(page.pno, None)
+            page.scale_hi = 0.0
+            if page.low is not None:
+                page.set_render(page.low, page.low_scale)
+            self._schedule()
+            return
+        z = self._text_zoom()
+        try:
+            pix, warnings = self.text_page(page.pno).render(edits, z)
+        except Exception as exc:  # noqa: BLE001
+            error_box(self, exc)
+            return
+        page.set_render(QPixmap.fromImage(pixmap_to_qimage(pix)), z)
+        page.scale_hi = z
+        if warn and warnings:
+            self.show_warning("Attention : " + " ; ".join(dict.fromkeys(warnings)) + ".")
+
+    def show_warning(self, text: str):
+        self.banner.setObjectName("banner")
+        self.banner.style().unpolish(self.banner)
+        self.banner.style().polish(self.banner)
+        self.banner_icon.setPixmap(icons.pixmap("shield", DANGER, 18))
+        self.banner_text.setText(text)
+
     # --------------------------------------------------------------- outils
     def set_tool(self, key: str):
         if key in ("image", "signature"):
@@ -1020,19 +1489,25 @@ class EditorWindow(QMainWindow):
             self.tool_actions[self.tool].setChecked(True)
             (self.insert_image if key == "image" else self.insert_signature)()
             return
+        if key != "modtext":
+            self.commit_inline()
+            self.hide_hover()
         self.tool = key
         self.tool_actions[key].setChecked(True)
         self.view.setDragMode(QGraphicsView.RubberBandDrag if key == "select" else QGraphicsView.NoDrag)
-        self.view.viewport().setCursor(Qt.ArrowCursor if key == "select" else
+        self.view.viewport().setCursor(Qt.ArrowCursor if key in ("select", "modtext") else
                                        (Qt.IBeamCursor if key == "text" else Qt.CrossCursor))
         hint = HINTS.get(key, "")
         self.banner_text.setText(hint)
         self.search_btn.setVisible(key == "redact" or self.mode == "redact")
         warn = key in ("redact", "whiteout")
         self.banner.setObjectName("banner" if warn else "infoBanner")
+        if key == "modtext":
+            self.view.setDragMode(QGraphicsView.NoDrag)
         self.banner.style().unpolish(self.banner)
         self.banner.style().polish(self.banner)
-        self.banner_icon.setPixmap(icons.pixmap("shield" if key == "redact" else "edit", DANGER if warn else ACCENT, 18))
+        self.banner_icon.setPixmap(icons.pixmap("shield" if key == "redact" else ("textedit" if key == "modtext" else "edit"),
+                                                DANGER if warn else ACCENT, 18))
         self._refresh_style_bar()
 
     def _color_key(self, kind=None):
@@ -1304,8 +1779,15 @@ class EditorWindow(QMainWindow):
         if isinstance(fi, TextItem) and fi.editing():
             fi.document().undo()
             return
+        if isinstance(fi, InlineTextEditor):
+            fi.document().undo()
+            return
         while self.history:
             op, item, page = self.history.pop()
+            if op == "text":
+                self.text_edits[item] = page
+                self._refresh_text_page(self.pages[item])
+                return
             if op == "add":
                 if item.scene() is not None:
                     self.scene.removeItem(item)
@@ -1331,8 +1813,10 @@ class EditorWindow(QMainWindow):
     def save(self):
         if self._saving:
             return
+        self.commit_inline()
         edits = self.collect_edits()
-        if not edits:
+        text_edits = {pno: list(v.values()) for pno, v in self.text_edits.items() if v}
+        if not edits and not text_edits:
             QMessageBox.information(self, "Rien à enregistrer", "Vous n'avez encore rien ajouté au document.")
             return
         has_redact = any(d["type"] == "redact" for v in edits.values() for d in v)
@@ -1362,6 +1846,9 @@ class EditorWindow(QMainWindow):
             self.dirty = False
             self.saved.emit(res)
             msg = "Les modifications ont été appliquées."
+            if text_edits and not has_redact:
+                msg = ("Les modifications ont été appliquées. Le texte modifié reprend la police, la taille et "
+                       "la couleur d'origine.")
             if has_redact:
                 msg = "Le caviardage est appliqué : le contenu masqué a été supprimé du fichier."
             ResultDialog(self, "Votre PDF est prêt", msg, [res]).exec()
@@ -1373,13 +1860,14 @@ class EditorWindow(QMainWindow):
             error_box(self, exc)
 
         run_task(core.apply_edits, self.path, self.password, out, edits, scrub_metadata=scrub,
-                 on_done=done, on_error=fail)
+                 text_edits=text_edits, on_done=done, on_error=fail)
 
     def closeEvent(self, e):
         if self._saving:
             e.ignore()
             return
-        if self.dirty and any(p.overlays() for p in self.pages):
+        self.commit_inline()
+        if self.dirty and (any(p.overlays() for p in self.pages) or any(self.text_edits.values())):
             ans = QMessageBox.question(self, "Modifications non enregistrées",
                                        "Vous avez des modifications non enregistrées. Fermer quand même ?",
                                        QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
@@ -1391,4 +1879,8 @@ class EditorWindow(QMainWindow):
         self.hi.stop()
         self.lo.stop()
         self.thumbs.clear_all()
+        try:
+            self.base_doc.close()
+        except Exception:
+            pass
         super().closeEvent(e)

@@ -1155,7 +1155,32 @@ def _text_html(item) -> tuple[str, str]:
     return f"<div>{body}</div>", css
 
 
-def apply_edits(src, password, out, edits: dict, *, scrub_metadata=False) -> str:
+class TextPage:
+    """Page isolée (rotation neutralisée) servant à l'analyse et à l'aperçu des
+    modifications de texte dans l'éditeur."""
+
+    def __init__(self, doc: pymupdf.Document, pno: int):
+        from . import textedit
+        tmp = pymupdf.open()
+        insert_pages(tmp, doc, pno, pno)
+        _normalize_rotation(tmp[0])
+        self.data = tmp.tobytes()
+        tmp.close()
+        d = pymupdf.open("pdf", self.data)
+        self.text = textedit.analyze(d[0])
+        d.close()
+
+    def render(self, edits: list[dict], zoom: float):
+        """Rend la page avec les modifications. Renvoie (pixmap, avertissements)."""
+        from . import textedit
+        d = pymupdf.open("pdf", self.data)
+        warnings = textedit.apply_text_edits(d[0], edits, self.text) if edits else []
+        pix = d[0].get_pixmap(matrix=pymupdf.Matrix(zoom, zoom), alpha=False)
+        d.close()
+        return pix, warnings
+
+
+def apply_edits(src, password, out, edits: dict, *, scrub_metadata=False, text_edits: dict | None = None) -> str:
     """Applique les éléments ajoutés dans l'éditeur.
 
     edits : {indice_page: [élément, ...]} ; chaque élément est un dict avec
@@ -1163,8 +1188,15 @@ def apply_edits(src, password, out, edits: dict, *, scrub_metadata=False) -> str
     highlight, whiteout, redact, note. Les coordonnées sont en points,
     dans le repère de la page telle qu'affichée.
     """
+    from . import textedit
     doc = open_pdf(src, password)
     any_redact = False
+    # 0) modifications du texte existant (avant tout ajout, sur la page d'origine)
+    for pno, tedits in (text_edits or {}).items():
+        if tedits:
+            page = doc[int(pno)]
+            _normalize_rotation(page)
+            textedit.apply_text_edits(page, tedits)
     for pno, items in edits.items():
         if not items:
             continue
@@ -1239,6 +1271,11 @@ def apply_edits(src, password, out, edits: dict, *, scrub_metadata=False) -> str
                 annot = page.add_text_annot(pymupdf.Point(it["point"]), it.get("text", ""), icon="Comment")
                 annot.set_info(title=it.get("author", "PDF Ceb"))
                 annot.update()
+    if text_edits:
+        try:
+            doc.subset_fonts()  # n'embarque que les caractères utilisés des polices ajoutées
+        except Exception:
+            pass
     if any_redact and scrub_metadata:
         try:
             doc.scrub(attached_files=False, clean_pages=False, embedded_files=False, hidden_text=False,

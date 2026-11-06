@@ -1570,11 +1570,13 @@ class EditorLauncher(ToolPage):
 
 class EditTool(EditorLauncher):
     KEY, TITLE, CAT, ICON = "edit", "Modifier le PDF", "modifier", "edit"
-    DESC = "Ajoutez du texte, des images, des formes, des surlignages, des commentaires ou masquez une zone."
+    DESC = "Modifiez le texte existant dans sa police d'origine, ajoutez du texte, des images, des formes ou des commentaires."
     ACTION = "Ouvrir l'éditeur"
     MODE = "edit"
-    HELP = ("L'éditeur s'ouvre dans une nouvelle fenêtre. Choisissez un outil dans la barre du haut puis cliquez "
-            "dans la page. Le fichier d'origine n'est jamais modifié : vous enregistrez une nouvelle version.")
+    HELP = ("L'éditeur s'ouvre dans une nouvelle fenêtre. « Modifier le texte » : cliquez sur une ligne pour la "
+            "corriger, double-cliquez (ou sélectionnez plusieurs lignes) pour reprendre tout le paragraphe ; le texte "
+            "garde sa police, sa taille et sa couleur. Les autres outils ajoutent texte, images, formes, signatures. "
+            "Le fichier d'origine n'est jamais modifié : vous enregistrez une nouvelle version.")
 
 
 class SignTool(EditorLauncher):

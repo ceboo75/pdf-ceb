@@ -1,6 +1,8 @@
 ## PDF Ceb — boîte à outils PDF pour Windows
 
-**Nouveautés 1.0.1** : la fusion (et les outils diviser, extraire, organiser, comparer, réparer) accepte désormais les PDF mal formés qui provoquaient l'erreur « source object number out of range ».
+**Nouveautés 1.1.0 — modifier le texte existant** : dans l'éditeur, l'outil « Modifier le texte » permet de corriger le texte d'un PDF comme dans un traitement de texte. Clic sur une ligne : modification de la ligne ; double-clic ou sélection de plusieurs lignes : modification du paragraphe, avec répartition automatique sur les lignes. La police est reconnue (police installée sur l'ordinateur ou reprise du PDF), ainsi que la taille, la couleur, le gras/italique et l'alignement (gauche, centré, droite, justifié). Seuls les caractères modifiés sont remplacés : le fond, les cadres et les lignes inchangées restent strictement identiques. Si la police du document n'est pas installée, une police proche est utilisée et un avertissement s'affiche.
+
+1.0.1 : la fusion accepte les PDF mal formés (erreur « source object number out of range »).
 
 Téléchargez **PDF-Ceb.exe** ci-dessous puis double-cliquez dessus : il n'y a rien à installer.
 Tous les traitements ont lieu sur votre ordinateur ; aucun document n'est envoyé sur Internet.
