@@ -25,6 +25,8 @@ import pymupdf
 from . import fontmatch
 
 
+NBSP = {"\u00a0", "\u202f", "\u2007"}
+
 # --------------------------------------------------------------------------
 # Structures
 # --------------------------------------------------------------------------
@@ -292,6 +294,15 @@ def analyze(page: pymupdf.Page) -> PageText:
         else:
             groups.append([ln])
     groups.sort(key=lambda g: (g[0].baseline, g[0].bbox[0]))
+    # Certaines polices (ex. Arial sous Windows) font apparaître toutes les espaces
+    # comme des espaces insécables (même glyphe) : on les rétablit en espaces
+    # normales lorsqu'un paragraphe ne contient aucune espace ordinaire.
+    for g in groups:
+        chars = [c for l in g for c in l.chars]
+        if not any(c.c == " " for c in chars) and any(c.c in NBSP for c in chars):
+            for c in chars:
+                if c.c in NBSP:
+                    c.c = " "
     paragraphs = [_make_paragraph(f"p{i}", g, page.rect.width) for i, g in enumerate(groups)]
     text_right = max((l.right for l in lines), default=page.rect.width)
     for p in paragraphs:

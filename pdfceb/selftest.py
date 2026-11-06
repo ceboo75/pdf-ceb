@@ -419,6 +419,9 @@ def run(workdir: Path | None = None) -> list[tuple[str, bool, str]]:
             {"key": foot.key, "mode": "line", "line": 1, "runs": sub(foot.lines[1].runs(), "service juridique", "direction juridique")},
             {"key": foot.key, "mode": "line", "line": 2, "runs": []},
         ]
+        for e, must in zip(edits, ("onze mille", "2027", "12 novembre", "direction juridique")):
+            assert must in "".join(t for t, _ in e["runs"]), ("remplacement impossible", must,
+                                                              [l.text for l in tp.text.find(e["key"]).lines])
         pix, warn = tp.render(edits, 1.0)
         assert not [w for w in warn if "remplacée" in w], warn
         out = core.apply_edits(src, None, o / "texte_modifie.pdf", {}, text_edits={0: edits})
@@ -459,6 +462,20 @@ def run(workdir: Path | None = None) -> list[tuple[str, bool, str]]:
         # titre toujours centré
         tl = again.paragraphs[0].lines[0]
         assert abs((tl.left + tl.right) / 2 - new.rect.width / 2) < 1.0
+        # espaces lues comme insécables (cas d'Arial sous Windows) : la ligne reste modifiable
+        nb = pymupdf.open()
+        pg_nb = nb.new_page()
+        pg_nb.insert_text((72, 100), "Montant\u00a0total\u00a0:\u00a0dix\u00a0mille\u00a0euros", fontsize=11)
+        pg_nb.insert_text((72, 114), "Seconde\u00a0ligne\u00a0du\u00a0paragraphe.", fontsize=11)
+        nb.save(o / "insecables.pdf")
+        tpn = core.TextPage(pymupdf.open(o / "insecables.pdf"), 0)
+        pn = tpn.text.paragraphs[0]
+        assert "dix mille" in pn.lines[0].text, repr(pn.lines[0].text)
+        en = [{"key": pn.key, "mode": "para", "runs": sub(pn.runs(), "dix mille", "douze mille")}]
+        outn = core.apply_edits(o / "insecables.pdf", None, o / "insecables_mod.pdf", {}, text_edits={0: en})
+        tn = " ".join(pymupdf.open(outn)[0].get_text("text").split())
+        assert "douze mille euros" in tn and "dix" not in tn, tn
+
         # nouvelle modification d'un fichier déjà modifié
         tp2 = core.TextPage(pymupdf.open(out), 0)
         b2 = tp2.text.paragraphs[1]
