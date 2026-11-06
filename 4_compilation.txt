@@ -1,0 +1,97 @@
+218 INFO: PyInstaller: 6.22.3, contrib hooks: 2026.9
+219 INFO: Python: 3.13.17
+239 INFO: Platform: Windows-2025Server-10.0.26100-SP0
+239 INFO: Python environment: C:\hostedtoolcache\windows\Python\3.13.17\x64
+240 INFO: wrote D:\a\pdf-ceb\pdf-ceb\PDF-Ceb.spec
+246 INFO: Removing temporary files and cleaning cache in C:\Users\runneradmin\AppData\Local\pyinstaller
+1400 INFO: Module search paths (PYTHONPATH):
+['C:\\hostedtoolcache\\windows\\Python\\3.13.17\\x64\\Scripts\\pyinstaller.exe',
+ 'C:\\hostedtoolcache\\windows\\Python\\3.13.17\\x64\\python313.zip',
+ 'C:\\hostedtoolcache\\windows\\Python\\3.13.17\\x64\\DLLs',
+ 'C:\\hostedtoolcache\\windows\\Python\\3.13.17\\x64\\Lib',
+ 'C:\\hostedtoolcache\\windows\\Python\\3.13.17\\x64',
+ 'C:\\hostedtoolcache\\windows\\Python\\3.13.17\\x64\\Lib\\site-packages',
+ 'D:\\a\\pdf-ceb\\pdf-ceb']
+1620 INFO: Appending 'binaries' from .spec
+1621 INFO: checking Analysis
+1621 INFO: Building Analysis because Analysis-00.toc is non existent
+1621 INFO: Looking for Python shared library...
+1621 INFO: Using Python shared library: C:\hostedtoolcache\windows\Python\3.13.17\x64\python313.dll
+1621 INFO: Running Analysis Analysis-00.toc
+1621 INFO: Target bytecode optimization level: 0
+1621 INFO: Initializing module dependency graph...
+1622 INFO: Initializing module graph hook caches...
+1631 INFO: Analyzing modules for base_library.zip ...
+2625 INFO: Processing standard module hook 'hook-encodings.py' from 'C:\\hostedtoolcache\\windows\\Python\\3.13.17\\x64\\Lib\\site-packages\\PyInstaller\\hooks'
+2941 INFO: Processing standard module hook 'hook-math.py' from 'C:\\hostedtoolcache\\windows\\Python\\3.13.17\\x64\\Lib\\site-packages\\PyInstaller\\hooks'
+3188 INFO: Processing standard module hook 'hook-heapq.py' from 'C:\\hostedtoolcache\\windows\\Python\\3.13.17\\x64\\Lib\\site-packages\\PyInstaller\\hooks'
+4328 INFO: Processing standard module hook 'hook-pickle.py' from 'C:\\hostedtoolcache\\windows\\Python\\3.13.17\\x64\\Lib\\site-packages\\PyInstaller\\hooks'
+6261 INFO: Caching module dependency graph...
+6288 INFO: Analyzing D:\a\pdf-ceb\pdf-ceb\run_pdfceb.py
+6296 INFO: Processing standard module hook 'hook-PySide6.py' from 'C:\\hostedtoolcache\\windows\\Python\\3.13.17\\x64\\Lib\\site-packages\\PyInstaller\\hooks'
+6421 INFO: Processing standard module hook 'hook-shiboken6.py' from 'C:\\hostedtoolcache\\windows\\Python\\3.13.17\\x64\\Lib\\site-packages\\PyInstaller\\hooks'
+6567 INFO: Processing standard module hook 'hook-PySide6.QtNetwork.py' from 'C:\\hostedtoolcache\\windows\\Python\\3.13.17\\x64\\Lib\\site-packages\\PyInstaller\\hooks'
+10081 INFO: Processing standard module hook 'hook-PySide6.QtCore.py' from 'C:\\hostedtoolcache\\windows\\Python\\3.13.17\\x64\\Lib\\site-packages\\PyInstaller\\hooks'
+15560 INFO: Processing standard module hook 'hook-PySide6.QtGui.py' from 'C:\\hostedtoolcache\\windows\\Python\\3.13.17\\x64\\Lib\\site-packages\\PyInstaller\\hooks'
+40648 INFO: Processing standard module hook 'hook-PySide6.QtWidgets.py' from 'C:\\hostedtoolcache\\windows\\Python\\3.13.17\\x64\\Lib\\site-packages\\PyInstaller\\hooks'
+44881 INFO: Processing standard module hook 'hook-PySide6.QtSvg.py' from 'C:\\hostedtoolcache\\windows\\Python\\3.13.17\\x64\\Lib\\site-packages\\PyInstaller\\hooks'
+47119 INFO: Processing standard module hook 'hook-PIL.py' from 'C:\\hostedtoolcache\\windows\\Python\\3.13.17\\x64\\Lib\\site-packages\\PyInstaller\\hooks'
+47204 INFO: Processing standard module hook 'hook-PIL.Image.py' from 'C:\\hostedtoolcache\\windows\\Python\\3.13.17\\x64\\Lib\\site-packages\\PyInstaller\\hooks'
+47628 INFO: Processing standard module hook 'hook-xml.py' from 'C:\\hostedtoolcache\\windows\\Python\\3.13.17\\x64\\Lib\\site-packages\\PyInstaller\\hooks'
+47644 INFO: Processing standard module hook 'hook-xml.etree.cElementTree.py' from 'C:\\hostedtoolcache\\windows\\Python\\3.13.17\\x64\\Lib\\site-packages\\PyInstaller\\hooks'
+47772 INFO: Processing standard module hook 'hook-PIL.ImageFilter.py' from 'C:\\hostedtoolcache\\windows\\Python\\3.13.17\\x64\\Lib\\site-packages\\PyInstaller\\hooks'
+47973 INFO: Processing standard module hook 'hook-multiprocessing.util.py' from 'C:\\hostedtoolcache\\windows\\Python\\3.13.17\\x64\\Lib\\site-packages\\PyInstaller\\hooks'
+48506 INFO: Processing standard module hook 'hook-sysconfig.py' from 'C:\\hostedtoolcache\\windows\\Python\\3.13.17\\x64\\Lib\\site-packages\\PyInstaller\\hooks'
+48509 INFO: Processing standard module hook 'hook-_ctypes.py' from 'C:\\hostedtoolcache\\windows\\Python\\3.13.17\\x64\\Lib\\site-packages\\PyInstaller\\hooks'
+48557 INFO: Processing standard module hook 'hook-platform.py' from 'C:\\hostedtoolcache\\windows\\Python\\3.13.17\\x64\\Lib\\site-packages\\PyInstaller\\hooks'
+48993 INFO: Processing standard module hook 'hook-difflib.py' from 'C:\\hostedtoolcache\\windows\\Python\\3.13.17\\x64\\Lib\\site-packages\\PyInstaller\\hooks'
+49294 INFO: Processing standard module hook 'hook-PySide6.QtTest.py' from 'C:\\hostedtoolcache\\windows\\Python\\3.13.17\\x64\\Lib\\site-packages\\PyInstaller\\hooks'
+49600 INFO: Analyzing hidden import 'pymupdf.__main__'
+49627 INFO: Analyzing hidden import 'pymupdf._features'
+49627 INFO: Analyzing hidden import 'pymupdf._tgif'
+49627 INFO: Analyzing hidden import 'pymupdf.features'
+49635 INFO: Analyzing hidden import 'pymupdf.layout'
+49990 INFO: Analyzing hidden import 'pymupdf.layout.onnx.LayoutProbAnalyzer'
+49997 INFO: Analyzing hidden import 'pymupdf.mupdf_info'
+49999 INFO: Analyzing hidden import 'pymupdf.show_features'
+50003 INFO: Analyzing hidden import 'pymupdf.tgif'
+50006 INFO: Processing module hooks (post-graph stage)...
+50216 INFO: Processing standard module hook 'hook-PIL.SpiderImagePlugin.py' from 'C:\\hostedtoolcache\\windows\\Python\\3.13.17\\x64\\Lib\\site-packages\\PyInstaller\\hooks'
+50509 INFO: Performing binary vs. data reclassification (124 entries)
+50521 INFO: Looking for ctypes DLLs
+50533 INFO: Analyzing run-time hooks ...
+50535 INFO: Including run-time hook 'pyi_rth_inspect.py' from 'C:\\hostedtoolcache\\windows\\Python\\3.13.17\\x64\\Lib\\site-packages\\PyInstaller\\hooks\\rthooks'
+50537 INFO: Including run-time hook 'pyi_rth_pkgutil.py' from 'C:\\hostedtoolcache\\windows\\Python\\3.13.17\\x64\\Lib\\site-packages\\PyInstaller\\hooks\\rthooks'
+50539 INFO: Including run-time hook 'pyi_rth_multiprocessing.py' from 'C:\\hostedtoolcache\\windows\\Python\\3.13.17\\x64\\Lib\\site-packages\\PyInstaller\\hooks\\rthooks'
+50541 INFO: Including run-time hook 'pyi_rth_pyside6.py' from 'C:\\hostedtoolcache\\windows\\Python\\3.13.17\\x64\\Lib\\site-packages\\PyInstaller\\hooks\\rthooks'
+50542 INFO: Processing pre-find-module-path hook 'hook-_pyi_rth_utils.py' from 'C:\\hostedtoolcache\\windows\\Python\\3.13.17\\x64\\Lib\\site-packages\\PyInstaller\\hooks\\pre_find_module_path'
+50544 INFO: Processing standard module hook 'hook-_pyi_rth_utils.py' from 'C:\\hostedtoolcache\\windows\\Python\\3.13.17\\x64\\Lib\\site-packages\\PyInstaller\\hooks'
+50552 INFO: Creating base_library.zip...
+50567 INFO: Looking for dynamic libraries
+C:\hostedtoolcache\windows\Python\3.13.17\x64\Lib\site-packages\fitz\__init__.py:17: FutureWarning: The `fitz` API is deprecated and will be removed in future. Use `import pymupdf` instead.
+  warnings.warn(
+51457 INFO: Extra DLL search directories (AddDllDirectory): ['C:\\hostedtoolcache\\windows\\Python\\3.13.17\\x64\\Lib\\site-packages\\shiboken6', 'C:\\hostedtoolcache\\windows\\Python\\3.13.17\\x64\\Lib\\site-packages\\numpy.libs']
+51457 INFO: Extra DLL search directories (PATH): ['C:\\hostedtoolcache\\windows\\Python\\3.13.17\\x64\\Lib\\site-packages\\PySide6']
+53012 INFO: Warnings written to D:\a\pdf-ceb\pdf-ceb\build\PDF-Ceb\warn-PDF-Ceb.txt
+53030 INFO: Graph cross-reference written to D:\a\pdf-ceb\pdf-ceb\build\PDF-Ceb\xref-PDF-Ceb.html
+53045 INFO: checking PYZ
+53045 INFO: Building PYZ because PYZ-00.toc is non existent
+53045 INFO: Building PYZ (ZlibArchive) D:\a\pdf-ceb\pdf-ceb\build\PDF-Ceb\PYZ-00.pyz
+53489 INFO: Building PYZ (ZlibArchive) D:\a\pdf-ceb\pdf-ceb\build\PDF-Ceb\PYZ-00.pyz completed successfully.
+53503 INFO: checking PKG
+53503 INFO: Building PKG because PKG-00.toc is non existent
+53503 INFO: Building PKG (CArchive) PDF-Ceb.pkg
+68150 INFO: Building PKG (CArchive) PDF-Ceb.pkg completed successfully.
+68153 INFO: Bootloader C:\hostedtoolcache\windows\Python\3.13.17\x64\Lib\site-packages\PyInstaller\bootloader\Windows-64bit-intel\runw.exe
+68153 INFO: checking EXE
+68153 INFO: Building EXE because EXE-00.toc is non existent
+68153 INFO: Building EXE from EXE-00.toc
+68153 INFO: Copying bootloader EXE to D:\a\pdf-ceb\pdf-ceb\dist\PDF-Ceb.exe
+68155 INFO: Copying icon to EXE
+68156 INFO: Copying version information to EXE
+68159 INFO: Copying 0 resources to EXE
+68159 INFO: Embedding manifest in EXE
+68160 INFO: Appending PKG archive to EXE
+68203 INFO: Fixing EXE headers
+68745 INFO: Building EXE from EXE-00.toc completed successfully.
+68749 INFO: Build complete! The results are available in: D:\a\pdf-ceb\pdf-ceb\dist

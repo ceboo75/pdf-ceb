@@ -1,0 +1,20 @@
+OK  merge → 1 fichier(s) · 4 fichiers réunis dans « 01_fusion.pdf ».
+OK  split → 2 fichier(s) · 2 fichier(s) créé(s) dans le dossier « contrat_v1_divisé ».
+OK  delete → 1 fichier(s) · 2 page(s) retirée(s).
+OK  extract → 1 fichier(s) · 3 page(s) extraite(s).
+OK  organize → 1 fichier(s) · Document de 11 page(s) enregistré.
+OK  compress → 1 fichier(s) · Taille réduite de 4 % : 56,4 Ko → 54,3 Ko.
+OK  repair → 1 fichier(s) · Le fichier ne présentait pas d'erreur détectable ; il a été réécrit proprement.
+OK  img2pdf → 1 fichier(s) · 2 image(s) converties dans « 08_images.pdf ».
+OK  pdf2img → 5 fichier(s) · 5 image(s) créée(s) dans « contrat_v1_images ».
+OK  rotate → 1 fichier(s) · 1 page(s) pivotée(s).
+OK  numbers → 1 fichier(s) · La numérotation a été ajoutée.
+OK  watermark → 1 fichier(s) · Le filigrane a été ajouté.
+OK  crop → 1 fichier(s) · Les pages ont été rognées.
+OK  form → 1 fichier(s) · Vos réponses ont été enregistrées.
+OK  protect → 1 fichier(s) · Il faudra le mot de passe pour l'ouvrir.
+OK  unlock → 1 fichier(s) · Le fichier enregistré n'a plus de mot de passe ni de restriction.
+OK  compare · 2 différence(s) trouvée(s)
+OK  éditeur → 18_contrat_v1_caviardé.pdf
+OK  modifier le texte → 19_convention_modifié.pdf
+OK  signature

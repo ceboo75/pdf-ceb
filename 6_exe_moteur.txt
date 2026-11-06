@@ -1,0 +1,17 @@
+OK  Modifier le texte existant
+OK  Sélection de pages
+OK  Fusionner
+OK  PDF mal formés
+OK  Diviser
+OK  Supprimer / extraire
+OK  Organiser
+OK  Pivoter
+OK  Numéros de pages
+OK  Filigranes
+OK  Rogner
+OK  Compresser / réparer
+OK  Protéger / déverrouiller
+OK  Images ↔ PDF
+OK  Formulaires
+OK  Comparer
+OK  Éditeur et caviardage
