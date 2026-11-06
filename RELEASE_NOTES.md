@@ -1,5 +1,7 @@
 ## PDF Ceb — boîte à outils PDF pour Windows
 
+**Nouveautés 1.0.1** : la fusion (et les outils diviser, extraire, organiser, comparer, réparer) accepte désormais les PDF mal formés qui provoquaient l'erreur « source object number out of range ».
+
 Téléchargez **PDF-Ceb.exe** ci-dessous puis double-cliquez dessus : il n'y a rien à installer.
 Tous les traitements ont lieu sur votre ordinateur ; aucun document n'est envoyé sur Internet.
 

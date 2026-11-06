@@ -83,7 +83,22 @@ def make_samples(d: Path) -> dict:
     p.add_widget(w)
     form_path = d / "formulaire.pdf"
     f.save(form_path)
-    return dict(a=a_path, b=b_path, form=form_path, photo=photo_path, logo=logo_path)
+
+    # PDF mal formé : la police de la page pointe vers un objet inexistant
+    # (cas réel : « source object number out of range » lors d'une fusion)
+    import re
+    m = pymupdf.open()
+    pg = m.new_page()
+    pg.insert_text((72, 80), "Document mal formé", fontsize=20)
+    raw = m.tobytes(expand=255, pretty=True, garbage=0).decode("latin-1")
+    n = m.xref_length()
+    ref = re.search(r"/helv\s+(\d+) 0 R", raw)
+    bad = "9" * len(ref.group(1))
+    assert int(bad) >= n
+    raw = raw[:ref.start(1)] + bad + raw[ref.end(1):]
+    broken_path = d / "mal_forme.pdf"
+    broken_path.write_bytes(raw.encode("latin-1"))
+    return dict(a=a_path, b=b_path, form=form_path, photo=photo_path, logo=logo_path, broken=broken_path)
 
 
 def _text(path, pno=0, pw=None):
@@ -133,6 +148,26 @@ def run(workdir: Path | None = None) -> list[tuple[str, bool, str]]:
         doc = pymupdf.open(out)
         titles = [t[1] for t in doc.get_toc()]
         assert "contrat_v1" in titles and "Milieu" in titles, titles
+
+    def t_malformed():
+        # la copie directe échoue bien sur ce fichier…
+        try:
+            pymupdf.open().insert_pdf(pymupdf.open(s["broken"]))
+            raise AssertionError("le fichier d'essai n'est pas mal formé")
+        except RuntimeError:
+            pass
+        # …mais toutes les opérations qui copient des pages fonctionnent
+        out = core.merge([(s["a"], None), (s["broken"], None), (s["b"], None)], o / "fusion_mal_forme.pdf")
+        assert _count(out) == 11
+        assert "Page 1" in _text(out, 0) and "Page 5" in _text(out, 10)
+        out = core.organize([(s["broken"], None), (s["a"], None)], [{"src": 0, "page": 0}, {"src": 1, "page": 1}],
+                            o / "organise_mal_forme.pdf")
+        assert _count(out) == 2
+        assert len(core.split_every(s["broken"], None, 1, o / "div_mal_forme")) == 1
+        assert _count(core.extract_pages(s["broken"], None, [0], o / "extrait_mal_forme.pdf")) == 1
+        core.compare(s["broken"], None, s["a"], None, o / "comparaison_mal_forme.pdf")
+        core.repair(s["broken"], None, o / "repare_mal_forme.pdf")
+        assert _count(o / "repare_mal_forme.pdf") == 1
 
     def t_split():
         outs = core.split_groups(s["a"], None, core.parse_groups("1-2, 3, 4-5", 5), o / "div")
@@ -303,7 +338,8 @@ def run(workdir: Path | None = None) -> list[tuple[str, bool, str]]:
         assert 480 < w[1] < 540, w
 
     for name, fn in [
-        ("Sélection de pages", t_parse), ("Fusionner", t_merge), ("Diviser", t_split),
+        ("Sélection de pages", t_parse), ("Fusionner", t_merge), ("PDF mal formés", t_malformed),
+        ("Diviser", t_split),
         ("Supprimer / extraire", t_delete_extract), ("Organiser", t_organize), ("Pivoter", t_rotate),
         ("Numéros de pages", t_numbers), ("Filigranes", t_watermark), ("Rogner", t_crop),
         ("Compresser / réparer", t_compress_repair), ("Protéger / déverrouiller", t_security),

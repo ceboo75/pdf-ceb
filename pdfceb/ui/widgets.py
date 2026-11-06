@@ -101,7 +101,11 @@ def ask_password(parent, path) -> str | None:
 
 
 def error_box(parent, exc, title="Une erreur est survenue"):
-    msg = str(exc) if isinstance(exc, core.PdfError) else f"{type(exc).__name__} : {exc}"
+    if isinstance(exc, core.PdfError):
+        msg = str(exc)
+    else:
+        msg = ("L'opération n'a pas pu aboutir.\n\n"
+               f"Détail technique (à me transmettre si le problème persiste) :\n{type(exc).__name__} : {exc}")
     QMessageBox.warning(parent, title, msg)
 
 

@@ -91,9 +91,9 @@ def _run(out: Path, shots: Path, log: list) -> bool:
     pump(0.5)
     win.grab().save(str(shots / "00_accueil.png"))
 
-    a, b, form, photo, logo = (str(samples[k]) for k in ("a", "b", "form", "photo", "logo"))
+    a, b, form, photo, logo, broken = (str(samples[k]) for k in ("a", "b", "form", "photo", "logo", "broken"))
     plan = {
-        "merge": ([a, b, photo], None),
+        "merge": ([a, broken, b, photo], None),
         "split": ([a], lambda p: p.ranges.setText("1-2, 3-5")),
         "delete": ([a], lambda p: p.grid.select_pages([0, 2])),
         "extract": ([a], lambda p: (p.range_edit.setText("2, 4-5"), p._range_typed())),

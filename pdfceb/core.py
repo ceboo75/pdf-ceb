@@ -248,6 +248,129 @@ def _normalize_rotation(page: pymupdf.Page):
 
 
 # --------------------------------------------------------------------------
+# Copie de pages robuste (PDF mal formés)
+# --------------------------------------------------------------------------
+_REF = re.compile(r"(?<![\w.])(\d+)\s+(\d+)\s+R(?!\w)")
+
+
+def fix_dangling_references(doc: pymupdf.Document) -> int:
+    """Remplace par « null » les références vers des objets inexistants.
+
+    Certains logiciels produisent des PDF qui pointent vers des objets absents
+    du fichier. Les lecteurs l'ignorent, mais la copie de pages échoue
+    (« source object number out of range »). Renvoie le nombre d'objets corrigés.
+    """
+    n = doc.xref_length()
+
+    def repl(m):
+        return m.group(0) if 0 < int(m.group(1)) < n else "null"
+
+    fixed = 0
+    for x in range(1, n):
+        try:
+            if doc.xref_is_stream(x):
+                changed = False
+                for key in doc.xref_get_keys(x):
+                    typ, val = doc.xref_get_key(x, key)
+                    new = _REF.sub(repl, val) if " R" in val else val
+                    if new != val:
+                        doc.xref_set_key(x, key, new)
+                        changed = True
+                fixed += changed
+            else:
+                src = doc.xref_object(x, compressed=False)
+                if " R" not in src:
+                    continue
+                new = _REF.sub(repl, src)
+                if new != src:
+                    doc.update_object(x, new)
+                    fixed += 1
+        except Exception:
+            continue
+    return fixed
+
+
+def _rollback(res: pymupdf.Document, count: int):
+    if res.page_count > count:
+        res.delete_pages(list(range(count, res.page_count)))
+
+
+def insert_pages(res: pymupdf.Document, src: pymupdf.Document, from_page: int = -1, to_page: int = -1) -> int:
+    """Copie des pages de src vers res, en contournant les défauts des PDF abîmés.
+
+    Ordre des tentatives : copie normale ; copie après correction des
+    références cassées ; puis page par page (sans liens/annotations, puis
+    reproduction vectorielle, puis en dernier recours image à 200 dpi).
+    Renvoie le nombre de pages qui ont dû être converties en image.
+    """
+    first = 0 if from_page < 0 else from_page
+    last = src.page_count - 1 if to_page < 0 else to_page
+    start = res.page_count
+    try:
+        res.insert_pdf(src, from_page=first, to_page=last)
+        return 0
+    except Exception:
+        _rollback(res, start)
+    if not getattr(src, "_pdfceb_fixed", False):
+        fix_dangling_references(src)
+        try:
+            src._pdfceb_fixed = True
+        except Exception:
+            pass
+        try:
+            res.insert_pdf(src, from_page=first, to_page=last)
+            return 0
+        except Exception:
+            _rollback(res, start)
+    rasterized = 0
+    step = 1 if last >= first else -1
+    for i in range(first, last + step, step):
+        before = res.page_count
+        try:
+            res.insert_pdf(src, from_page=i, to_page=i)
+            continue
+        except Exception:
+            _rollback(res, before)
+        try:
+            res.insert_pdf(src, from_page=i, to_page=i, links=False, annots=False)
+            continue
+        except Exception:
+            _rollback(res, before)
+        page = src[i]
+        r = page.rect
+        new = res.new_page(width=r.width, height=r.height)
+        try:
+            new.show_pdf_page(new.rect, src, i)
+            continue
+        except Exception:
+            pass
+        new.insert_image(new.rect, pixmap=page.get_pixmap(dpi=200, alpha=False))
+        rasterized += 1
+    return rasterized
+
+
+def show_page(target: pymupdf.Page, rect, src: pymupdf.Document, pno: int):
+    """show_pdf_page tolérant aux PDF mal formés."""
+    try:
+        target.show_pdf_page(rect, src, pno)
+        return
+    except Exception:
+        pass
+    if not getattr(src, "_pdfceb_fixed", False):
+        fix_dangling_references(src)
+        try:
+            src._pdfceb_fixed = True
+        except Exception:
+            pass
+        try:
+            target.show_pdf_page(rect, src, pno)
+            return
+        except Exception:
+            pass
+    target.insert_image(rect, pixmap=src[pno].get_pixmap(dpi=150, alpha=False))
+
+
+# --------------------------------------------------------------------------
 # Images
 # --------------------------------------------------------------------------
 def _image_frames(path):
@@ -431,10 +554,14 @@ def merge(sources, out, bookmarks: bool = True) -> str:
                 toc.append([1, Path(path).stem, start + 1])
             continue
         d = open_pdf(path, pw)
-        res.insert_pdf(d)
+        insert_pages(res, d)
         if bookmarks:
             toc.append([1, Path(path).stem, start + 1])
-            for entry in d.get_toc(simple=True):
+            try:
+                entries = d.get_toc(simple=True)
+            except Exception:
+                entries = []
+            for entry in entries:
                 lvl, title, pg = entry[0], entry[1], entry[2]
                 toc.append([lvl + 1, title, (pg + start) if pg > 0 else start + 1])
         d.close()
@@ -453,7 +580,7 @@ def split_groups(src, password, groups: list[list[int]], out_dir, base=None) -> 
     for g in groups:
         part = pymupdf.open()
         for i in g:
-            part.insert_pdf(doc, from_page=i, to_page=i)
+            insert_pages(part, doc, i, i)
         label = f"{g[0] + 1}" if len(g) == 1 else f"{g[0] + 1}-{g[-1] + 1}"
         outs.append(_save(part, _unique(Path(out_dir) / f"{base}_pages_{label}.pdf"), garbage=4))
     doc.close()
@@ -488,7 +615,7 @@ def extract_pages(src, password, pages: list[int], out) -> str:
     doc = open_pdf(src, password)
     res = pymupdf.open()
     for i in pages:
-        res.insert_pdf(doc, from_page=i, to_page=i)
+        insert_pages(res, doc, i, i)
     doc.close()
     return _save(res, out, garbage=4)
 
@@ -510,7 +637,7 @@ def organize(sources, items: list[dict], out) -> str:
             continue
         d = docs[it["src"]]
         p = it["page"]
-        res.insert_pdf(d, from_page=p, to_page=p)
+        insert_pages(res, d, p, p)
         extra = int(it.get("rot", 0)) % 360
         if extra:
             pg = res[-1]
@@ -746,10 +873,10 @@ def repair(src, password, out) -> bool:
     repaired = bool(getattr(doc, "is_repaired", False))
     # Reconstruction page par page dans un document neuf
     res = pymupdf.open()
-    bad = 0
+    bad = fix_dangling_references(doc)
     for i in range(doc.page_count):
         try:
-            res.insert_pdf(doc, from_page=i, to_page=i)
+            bad += insert_pages(res, doc, i, i)
         except Exception:
             bad += 1
     if res.page_count == 0:
@@ -990,7 +1117,7 @@ def compare(src_a, pw_a, src_b, pw_b, out_report) -> dict:
         if ra:
             ta_rect = pymupdf.Rect(gap, header, gap + ra.width, header + ra.height)
             page.draw_rect(ta_rect, color=(0.8, 0.8, 0.8), width=0.5)
-            page.show_pdf_page(ta_rect, da, i)
+            show_page(page, ta_rect, da, i)
             for r in marks_a.get(i, []):
                 page.draw_rect(r + (ta_rect.x0, ta_rect.y0, ta_rect.x0, ta_rect.y0), color=None,
                                fill=(0.95, 0.2, 0.2), fill_opacity=0.35)
@@ -998,7 +1125,7 @@ def compare(src_a, pw_a, src_b, pw_b, out_report) -> dict:
             x0 = gap * 2 + wa_
             tb_rect = pymupdf.Rect(x0, header, x0 + rb.width, header + rb.height)
             page.draw_rect(tb_rect, color=(0.8, 0.8, 0.8), width=0.5)
-            page.show_pdf_page(tb_rect, db, i)
+            show_page(page, tb_rect, db, i)
             for r in marks_b.get(i, []):
                 page.draw_rect(r + (tb_rect.x0, tb_rect.y0, tb_rect.x0, tb_rect.y0), color=None,
                                fill=(0.2, 0.75, 0.2), fill_opacity=0.35)
